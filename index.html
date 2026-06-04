@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MIRA Stock Mobile</title>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+
+    <style>
+        :root {
+            --primary: #00796B;
+            --accent: #E63946;
+            --bg: #F1F5F9;
+            --surface: #FFFFFF;
+            --text: #334155;
+            --border: #CBD5E1;
+        }
+        body { font-family: 'Prompt', sans-serif; background: var(--bg); margin: 0; padding: 0; color: var(--text); overflow-x: hidden; }
+        .header { background: var(--surface); padding: 15px 20px; text-align: center; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border-bottom: 3px solid var(--primary); position: relative; }
+        .header h2 { margin: 0; font-size: 1.3rem; color: var(--primary); }
+        .header .user-badge { position: absolute; right: 15px; top: 15px; background: #E0F2F1; color: var(--primary); padding: 4px 10px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; display: none; }
+        .container { padding: 20px; max-width: 500px; margin: 0 auto; }
+        
+        /* Login */
+        #login-screen { text-align: center; margin-top: 30px; }
+        .pin-dots { display: flex; justify-content: center; gap: 15px; margin: 20px 0 30px; }
+        .dot { width: 15px; height: 15px; border-radius: 50%; border: 2px solid var(--primary); transition: 0.2s; }
+        .dot.active { background: var(--primary); transform: scale(1.2); }
+        .numpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; max-width: 300px; margin: 0 auto; }
+        .num-btn { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; height: 70px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: 700; cursor: pointer; }
+        .num-btn:active { background: #E2E8F0; transform: scale(0.95); }
+        .num-btn.clear { color: var(--accent); font-size: 1rem; }
+        .num-btn.del { color: #64748B; font-size: 1.5rem; }
+
+        /* App */
+        #app-screen { display: none; }
+        .card { background: var(--surface); padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); margin-bottom: 20px; }
+        label { font-weight: 600; font-size: 0.9rem; margin-bottom: 8px; display: block; color: #475569; }
+        select, input[type="number"], input[type="text"] { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; font-family: 'Prompt'; font-size: 1rem; margin-bottom: 15px; box-sizing: border-box; background: #F8FAFC; outline: none; }
+        select:focus, input:focus { border-color: var(--primary); background: #fff; }
+        
+        .search-group { display: flex; gap: 10px; margin-bottom: 10px; }
+        .search-group input { margin-bottom: 0; flex: 1; }
+        .btn-scan { background: #E0F2F1; border: 2px solid var(--primary); border-radius: 8px; width: 60px; display: flex; justify-content: center; align-items: center; font-size: 1.6rem; cursor: pointer; transition: 0.2s; }
+        .btn-scan:active { background: #B2DFDB; transform: scale(0.95); }
+        
+        #reader { width: 100%; border-radius: 12px; overflow: hidden; display: none; margin-bottom: 10px; border: 2px solid var(--primary); }
+        .btn-switch-cam { background: #334155; color: white; width: 100%; padding: 12px; border: none; border-radius: 8px; font-family: 'Prompt'; font-size: 1rem; margin-bottom: 15px; cursor: pointer; display: none; }
+        
+        .action-btns { display: flex; gap: 10px; margin-top: 10px; }
+        .btn { flex: 1; padding: 15px; border: none; border-radius: 8px; font-family: 'Prompt'; font-size: 1.1rem; font-weight: 700; color: white; cursor: pointer; transition: 0.2s; }
+        .btn:active { transform: scale(0.98); }
+        .btn-in { background: #10B981; }
+        .btn-out { background: var(--accent); }
+        .btn-transfer { background: #3B82F6; }
+        .btn:disabled { background: #94A3B8; }
+        
+        .logout-text { text-align: center; color: #94A3B8; text-decoration: underline; font-size: 0.9rem; margin-top: 20px; cursor: pointer; }
+
+        .overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(255,255,255,0.8); z-index: 1000; display: flex; justify-content: center; align-items: center; flex-direction: column; display: none; }
+        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Modal เพิ่มสินค้าใหม่ */
+        .modal-content { max-height: 80vh; overflow-y: auto; padding: 20px; }
+        .btn-add-new { background: #F59E0B; box-shadow: 0 4px 10px rgba(245, 158, 11, 0.2); margin-top: 15px; width: 100%; }
+        .two-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h2>MIRA Mobile Stock</h2>
+        <div id="userBadge" class="user-badge">พนักงาน</div>
+    </div>
+
+    <div class="container">
+        <div id="login-screen">
+            <h3 style="margin-bottom:5px;">ล็อกอินเข้าใช้งาน</h3>
+            <p style="color:#64748B; font-size:0.9rem; margin-top:0;">ใส่รหัส PIN 4 หลักของคุณ</p>
+            
+            <div class="pin-dots">
+                <div class="dot" id="dot1"></div>
+                <div class="dot" id="dot2"></div>
+                <div class="dot" id="dot3"></div>
+                <div class="dot" id="dot4"></div>
+            </div>
+
+            <div class="numpad">
+                <div class="num-btn" onclick="pressPin('1')">1</div>
+                <div class="num-btn" onclick="pressPin('2')">2</div>
+                <div class="num-btn" onclick="pressPin('3')">3</div>
+                <div class="num-btn" onclick="pressPin('4')">4</div>
+                <div class="num-btn" onclick="pressPin('5')">5</div>
+                <div class="num-btn" onclick="pressPin('6')">6</div>
+                <div class="num-btn" onclick="pressPin('7')">7</div>
+                <div class="num-btn" onclick="pressPin('8')">8</div>
+                <div class="num-btn" onclick="pressPin('9')">9</div>
+                <div class="num-btn clear" onclick="clearPin()">ล้าง</div>
+                <div class="num-btn" onclick="pressPin('0')">0</div>
+                <div class="num-btn del" onclick="delPin()">⌫</div>
+            </div>
+        </div>
+
+        <div id="app-screen">
+            <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none;" onchange="handleImageScan(event)">
+            <div id="reader"></div>
+            <button id="switchCamBtn" class="btn-switch-cam" onclick="switchCamera()">🔄 สลับกล้องหน้า/หลัง</button>
+
+            <div class="card">
+                <label>🔍 ค้นหาสินค้า (พิมพ์ชื่อ หรือ สแกน):</label>
+                <div class="search-group">
+                    <input type="text" id="searchInput" placeholder="พิมพ์ชื่อ หรือ บาร์โค้ด..." oninput="handleSearchInput()">
+                    <button class="btn-scan" onclick="toggleScanner('searchInput')" title="สแกนบาร์โค้ด">📷</button>
+                </div>
+
+                <select id="itemSelect">
+                    <option value="">-- รอโหลดข้อมูลสต๊อก --</option>
+                </select>
+
+                <label style="margin-top:20px;">📦 ระบุจำนวน:</label>
+                <input type="number" id="qtyInput" placeholder="ใส่จำนวนตัวเลข" value="1" min="1">
+
+                <div class="action-btns">
+                    <button class="btn btn-in" id="btnIn" onclick="submitStock('IN')">📥 รับเข้า</button>
+                    <button class="btn btn-out" id="btnOut" onclick="submitStock('OUT')">📤 เบิกใช้</button>
+                </div>
+                
+                <div class="action-btns" style="margin-top: 10px;">
+                     <button class="btn btn-transfer" id="btnTransfer" onclick="openTransferModal()">🔄 โอนเป็นของใช้</button>
+                </div>
+
+                <button class="btn btn-add-new" onclick="openNewItemModal()">➕ สร้างรายการสินค้าใหม่</button>
+            </div>
+            
+            <div class="logout-text" onclick="logout()">ออกจากระบบ (Logout)</div>
+        </div>
+    </div>
+
+    <div id="newItemModal" class="overlay" style="background: rgba(0,0,0,0.6);">
+        <div class="card modal-content" style="width: 85%; max-width: 400px; text-align:left;">
+            <h3 style="margin-top:0; color:#F59E0B; border-bottom: 2px solid #F1F5F9; padding-bottom: 10px;">➕ สร้างสินค้าใหม่</h3>
+            
+            <label>รหัสบาร์โค้ด:</label>
+            <div class="search-group">
+                <input type="text" id="niBarcode" placeholder="สแกนหรือพิมพ์รหัส">
+                <button class="btn-scan" onclick="toggleScanner('niBarcode')">📷</button>
+            </div>
+
+            <label>ชื่อสินค้า:</label>
+            <input type="text" id="niName" placeholder="เช่น แชมพูสระผม MIRA">
+
+            <div class="two-cols">
+                <div>
+                    <label>แบรนด์ (Brand):</label>
+                    <input type="text" id="niBrand" placeholder="ระบุแบรนด์">
+                </div>
+                <div>
+                    <label>ขนาด (Size):</label>
+                    <input type="text" id="niSize" placeholder="เช่น 500ml">
+                </div>
+            </div>
+
+            <label>บริษัทที่สั่ง (Supplier):</label>
+<input type="text" id="niSupplier" list="vendorListOptions" placeholder="พิมพ์หรือเลือกจากรายชื่อบริษัท">
+<datalist id="vendorListOptions"></datalist>
+
+            <label>ประเภท (หมวดหมู่):</label>
+            <select id="niCategory">
+                <option value="เบิกใช้">เบิกใช้ (ของใช้ในร้าน)</option>
+                <option value="สินค้าขาย">สินค้าขาย (หน้าร้าน)</option>
+            </select>
+
+            <div class="two-cols">
+                <div>
+                    <label>ต้นทุน (Cost):</label>
+                    <input type="number" id="niCost" placeholder="0">
+                </div>
+                <div>
+                    <label>ราคาขาย (Price):</label>
+                    <input type="number" id="niPrice" placeholder="0">
+                </div>
+            </div>
+
+            <div style="font-size:0.8rem; color:#64748B; margin-bottom: 15px;">* สินค้าใหม่จะมีจำนวน (Qty) เป็น 0 ก่อน สามารถกด "รับเข้า" ภายหลังได้</div>
+
+            <div class="action-btns">
+                <button class="btn" style="background:#94A3B8;" onclick="closeNewItemModal()">ยกเลิก</button>
+                <button class="btn btn-in" onclick="submitNewItem()">บันทึกข้อมูล</button>
+            </div>
+        </div>
+   </div>
+
+    <div id="transferModal" class="overlay" style="background: rgba(0,0,0,0.5);">
+         <div class="card" style="width: 80%; max-width: 350px; text-align:left;">
+             <h3 style="margin-top:0; color:var(--primary);">โอนสินค้าขาย -> เป็นของใช้</h3>
+             <p id="transferItemName" style="font-size:0.9rem; color:#555;"></p>
+             <label>ระบุเหตุผล/หมายเหตุ:</label>
+             <input type="text" id="transferNote" placeholder="เช่น แกะใช้หน้าร้าน">
+             
+             <div class="action-btns">
+                 <button class="btn" style="background:#94A3B8;" onclick="closeTransferModal()">ยกเลิก</button>
+                 <button class="btn btn-transfer" onclick="confirmTransfer()">ยืนยันโอน</button>
+             </div>
+         </div>
+    </div>
+
+    <div class="overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <p id="loadingText" style="margin-top:15px; font-weight:bold; color:var(--primary);">กำลังโหลด...</p>
+    </div>
+
+    <script>
+        // 🔴 นำ URL ของ Web App จาก Google Apps Script มาใส่ในนี้ 🔴
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwEatHhgr6ko7WDX1hLp7-U5NwZpU8n3onKQ1hGEBD-xvdfQZb5ofwvsw6H0vHZTRFD/exec";
+
+        let enteredPin = "";
+        let loggedInUser = "";
+        let stockItems = []; 
+        let html5QrCode = null;
+        let camerasList = [];
+        let currentCamIdx = 0;
+        let currentScanTarget = 'searchInput'; // ตัวแปรบอกว่ากล้องกำลังสแกนให้ช่องไหน
+
+        // 🟢 API Fetch
+        function callApi(action, payload = {}) {
+            return fetch(SCRIPT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
+                body: JSON.stringify({ action: action, payload: payload }),
+                redirect: 'follow'
+            })
+            .then(res => {
+                if (!res.ok) throw new Error("Network response not ok");
+                return res.json();
+            })
+            .catch(err => {
+                console.error("API Error:", err);
+                hideLoading();
+                alert("การเชื่อมต่อล้มเหลว กรุณาลองใหม่อีกครั้ง");
+                throw err;
+            });
+        }
+
+        // --- ระบบ Login ---
+        function pressPin(num) {
+            if(enteredPin.length < 4) {
+                enteredPin += num;
+                updateDots();
+                if(enteredPin.length === 4) verifyPin();
+            }
+        }
+        function clearPin() { enteredPin = ""; updateDots(); }
+        function delPin() { enteredPin = enteredPin.slice(0, -1); updateDots(); }
+        
+        function updateDots() {
+            for(let i=1; i<=4; i++) {
+                document.getElementById('dot'+i).classList.toggle('active', i <= enteredPin.length);
+            }
+        }
+
+        function showLoading(text) {
+            document.getElementById('loadingText').innerText = text;
+            document.getElementById('loadingOverlay').style.display = 'flex';
+        }
+        function hideLoading() {
+            document.getElementById('loadingOverlay').style.display = 'none';
+        }
+
+      function verifyPin() {
+            showLoading("กำลังตรวจสอบรหัส...");
+            callApi('verifyPin', { pin: enteredPin }).then(res => {
+                hideLoading();
+                if(res && res.success) {
+                    loggedInUser = res.name;
+                    document.getElementById('userBadge').innerText = "👤 " + res.name.split(' ')[0];
+                    document.getElementById('userBadge').style.display = 'block';
+                    document.getElementById('login-screen').style.display = 'none';
+                    document.getElementById('app-screen').style.display = 'block';
+                    
+                    loadStockData(); 
+                    loadVendors(); // 🌟 เพิ่มบรรทัดนี้ เพื่อให้ดึงรายชื่อบริษัทมาเตรียมไว้ทันที
+                } else {
+                    alert(res.msg || "รหัสผ่านไม่ถูกต้อง");
+                    clearPin();
+                }
+            });
+        }
+
+        function logout() {
+            loggedInUser = "";
+            clearPin();
+            document.getElementById('userBadge').style.display = 'none';
+            document.getElementById('app-screen').style.display = 'none';
+            document.getElementById('login-screen').style.display = 'block';
+            document.getElementById('searchInput').value = "";
+            document.getElementById('qtyInput').value = "1";
+            closeScanner();
+        }
+
+        // --- ระบบดึงสต๊อก ---
+        function loadStockData() {
+            showLoading("กำลังดึงข้อมูลคลังสินค้า...");
+            callApi('getStock').then(res => {
+                hideLoading();
+                if (res && res.status === 'success') {
+                    stockItems = res.data.filter(item => !item.isService);
+                    renderDropdown(stockItems);
+                } else {
+                    alert("ไม่สามารถอ่านข้อมูลสต๊อกได้");
+                }
+            });
+        }
+
+        function renderDropdown(items) {
+            let select = document.getElementById('itemSelect');
+            select.innerHTML = '<option value="">-- เลือกรายการสินค้า --</option>';
+            items.forEach(i => {
+                select.innerHTML += `<option value="${i.id}">${i.name} (คงเหลือ: ${i.qty})</option>`;
+            });
+        }
+
+        function handleSearchInput() {
+            let term = document.getElementById('searchInput').value.toLowerCase().trim();
+            let filtered = stockItems.filter(i => 
+                i.name.toLowerCase().includes(term) || i.id.toLowerCase().includes(term)
+            );
+            renderDropdown(filtered);
+
+            let select = document.getElementById('itemSelect');
+            if (filtered.length === 1) {
+                select.value = filtered[0].id;
+            } else {
+               let exactMatch = stockItems.find(i => i.id.toLowerCase() === term);
+               if(exactMatch) select.value = exactMatch.id;
+            }
+        }
+
+        // --- ระบบกล้อง (รองรับ 2 ช่องทาง: ค้นหา และ สร้างสินค้าใหม่) ---
+        function toggleScanner(targetInputId) {
+            currentScanTarget = targetInputId; // จำไว้ว่ากล้องนี้เปิดมาเพื่อใส่รหัสให้ช่องไหน
+            let readerDiv = document.getElementById('reader');
+            let switchBtn = document.getElementById('switchCamBtn');
+            
+            // ปิด Modal แปปนึงถ้าเป้าหมายคือหน้าสร้างสินค้าใหม่ เพื่อให้เห็นกล้องชัดๆ
+            if(targetInputId === 'niBarcode') {
+                document.getElementById('newItemModal').style.display = 'none';
+            }
+            
+            if (readerDiv.style.display === 'block') {
+                closeScanner();
+            } else {
+                readerDiv.style.display = 'block';
+                if (!html5QrCode) html5QrCode = new Html5Qrcode("reader");
+                
+                Html5Qrcode.getCameras().then(devices => {
+                    if (devices && devices.length > 0) {
+                        camerasList = devices;
+                        currentCamIdx = devices.length - 1; 
+                        for(let i=0; i<devices.length; i++) {
+                            let lbl = devices[i].label.toLowerCase();
+                            if(lbl.includes('back') || lbl.includes('rear') || lbl.includes('environment')) {
+                                currentCamIdx = i; break;
+                            }
+                        }
+                        startCamera(camerasList[currentCamIdx].id);
+                        if(camerasList.length > 1) switchBtn.style.display = 'block';
+                    } else {
+                        document.getElementById('cameraInput').click(); 
+                    }
+                }).catch(err => {
+                    document.getElementById('cameraInput').click(); 
+                });
+            }
+        }
+
+        function startCamera(cameraId) {
+            html5QrCode.start(
+                cameraId, 
+                { fps: 10, qrbox: { width: 250, height: 250 } },
+                onScanSuccess,
+                onScanFailure
+            ).catch(err => {
+                document.getElementById('cameraInput').click(); 
+            });
+        }
+
+        function switchCamera() {
+            if (camerasList.length > 1) {
+                currentCamIdx = (currentCamIdx + 1) % camerasList.length;
+                html5QrCode.stop().then(() => {
+                    startCamera(camerasList[currentCamIdx].id);
+                }).catch(e => { startCamera(camerasList[currentCamIdx].id); });
+            }
+        }
+
+        function closeScanner() {
+            document.getElementById('switchCamBtn').style.display = 'none';
+            document.getElementById('reader').style.display = 'none';
+            if (html5QrCode) html5QrCode.stop().catch(e => {});
+            
+            // ถ้าเป้าหมายคือหน้าต่างสร้างของใหม่ ให้เปิด Modal กลับมา
+            if(currentScanTarget === 'niBarcode') {
+                document.getElementById('newItemModal').style.display = 'flex';
+            }
+        }
+
+        function handleImageScan(event) {
+            if (event.target.files.length == 0) {
+                if(currentScanTarget === 'niBarcode') document.getElementById('newItemModal').style.display = 'flex';
+                return;
+            }
+            const imageFile = event.target.files[0];
+            if (!html5QrCode) html5QrCode = new Html5Qrcode("reader");
+            
+            showLoading("กำลังสแกนรูปภาพ...");
+            html5QrCode.scanFile(imageFile, true)
+            .then(decodedText => {
+                hideLoading();
+                onScanSuccess(decodedText, null);
+            })
+            .catch(err => {
+                hideLoading();
+                alert("ไม่พบบาร์โค้ดในรูปภาพ");
+                if(currentScanTarget === 'niBarcode') document.getElementById('newItemModal').style.display = 'flex';
+            });
+            event.target.value = ''; 
+        }
+
+        function onScanSuccess(decodedText, decodedResult) {
+            closeScanner(); // จะดึง Modal กลับมาให้อัตโนมัติด้วย
+            
+            // เอาข้อความไปใส่ในช่องเป้าหมาย
+            document.getElementById(currentScanTarget).value = decodedText;
+            
+            // ถ้าช่องเป้าหมายคือการค้นหา ให้เรียกฟังก์ชันค้นหา
+            if(currentScanTarget === 'searchInput') {
+                handleSearchInput(); 
+                if(document.getElementById('itemSelect').value === "") {
+                     alert("สแกนได้รหัส: " + decodedText + "\nแต่ไม่พบในฐานข้อมูลสินค้า");
+                }
+            }
+
+            try { new Audio('https://www.soundjay.com/buttons/beep-07a.wav').play(); } catch(e){}
+        }
+
+        function onScanFailure(error) { }
+
+        // --- ระบบ Submit (รับเข้า/เบิก) ---
+        function submitStock(actionType) {
+            let barcode = document.getElementById('itemSelect').value;
+            let qty = parseFloat(document.getElementById('qtyInput').value);
+            
+            if(!barcode) return alert("กรุณาเลือกสินค้า");
+            if(isNaN(qty) || qty <= 0) return alert("กรุณาระบุจำนวนตัวเลขที่ถูกต้อง");
+
+            let itemName = document.getElementById('itemSelect').options[document.getElementById('itemSelect').selectedIndex].text;
+            let actionName = actionType === 'IN' ? 'รับเข้า' : 'เบิกใช้';
+            
+            if(!confirm(`ยืนยันการทำรายการ?\n\nพนักงาน: ${loggedInUser}\nรายการ: ${itemName}\nการกระทำ: ${actionName} (${qty} ชิ้น)`)) return;
+
+            disableBtns(true);
+            showLoading("กำลังบันทึกข้อมูล...");
+
+            let payload = { barcode: barcode, action: actionType, qty: qty, staff: loggedInUser };
+
+            callApi('manageInventory', payload).then(res => {
+                disableBtns(false);
+                if(res.status === "success") {
+                    alert(`บันทึกการ${actionName}สำเร็จ!`);
+                    resetForm();
+                } else {
+                    hideLoading();
+                    alert("เกิดข้อผิดพลาด: " + res.msg);
+                }
+            });
+        }
+
+        // --- ระบบ Submit (โอน) ---
+        function openTransferModal() {
+             let barcode = document.getElementById('itemSelect').value;
+             let qty = parseFloat(document.getElementById('qtyInput').value);
+             if(!barcode) return alert("กรุณาเลือกสินค้าที่ต้องการโอน");
+             if(isNaN(qty) || qty <= 0) return alert("กรุณาระบุจำนวนที่ต้องการโอน");
+
+             let itemName = document.getElementById('itemSelect').options[document.getElementById('itemSelect').selectedIndex].text;
+             document.getElementById('transferItemName').innerText = `${itemName} (จำนวน ${qty} ชิ้น)`;
+             document.getElementById('transferNote').value = "";
+             document.getElementById('transferModal').style.display = 'flex';
+        }
+
+        function closeTransferModal() { document.getElementById('transferModal').style.display = 'none'; }
+
+        function confirmTransfer() {
+            let barcode = document.getElementById('itemSelect').value;
+            let qty = parseFloat(document.getElementById('qtyInput').value);
+            let note = document.getElementById('transferNote').value.trim() || "โอนเป็นของใช้ในร้าน";
+
+            closeTransferModal();
+            disableBtns(true);
+            showLoading("กำลังโอนสินค้า...");
+
+            let payload = { barcode: barcode, qty: qty, staff: loggedInUser, note: note };
+
+            callApi('transferToInternalUse', payload).then(res => {
+                disableBtns(false);
+                if(res.status === "success") {
+                    alert("โอนสินค้าเรียบร้อยแล้ว");
+                    resetForm();
+                } else {
+                    hideLoading();
+                    alert("เกิดข้อผิดพลาด: " + res.msg);
+                }
+            });
+        }
+
+        // --- 🌟 ระบบสร้างสินค้าใหม่ ---
+        function openNewItemModal() {
+            // ล้างค่าฟอร์มก่อนเปิด
+            document.getElementById('niBarcode').value = "";
+            document.getElementById('niName').value = "";
+            document.getElementById('niBrand').value = "";
+            document.getElementById('niSize').value = "";
+            document.getElementById('niSupplier').value = "";
+            document.getElementById('niCost').value = "";
+            document.getElementById('niPrice').value = "";
+            document.getElementById('niCategory').value = "เบิกใช้";
+            
+            document.getElementById('newItemModal').style.display = 'flex';
+        }
+
+        function closeNewItemModal() {
+            document.getElementById('newItemModal').style.display = 'none';
+        }
+
+        function submitNewItem() {
+            let payload = {
+                barcode: document.getElementById('niBarcode').value.trim(),
+                name: document.getElementById('niName').value.trim(),
+                brand: document.getElementById('niBrand').value.trim(),
+                size: document.getElementById('niSize').value.trim(),
+                supplier: document.getElementById('niSupplier').value.trim(),
+                category: document.getElementById('niCategory').value,
+                cost: parseFloat(document.getElementById('niCost').value) || 0,
+                price: parseFloat(document.getElementById('niPrice').value) || 0,
+                staff: loggedInUser
+            };
+
+            if(!payload.barcode || !payload.name) {
+                return alert("กรุณาระบุรหัสบาร์โค้ด และชื่อสินค้าให้ครบถ้วน");
+            }
+
+            closeNewItemModal();
+            showLoading("กำลังบันทึกสินค้าใหม่...");
+
+            callApi('addNewItem', payload).then(res => {
+                if(res.status === "success") {
+                    alert("เพิ่มสินค้าใหม่เข้าระบบสำเร็จ!\nสามารถกด 'รับเข้า' เพื่อเพิ่มจำนวนคงเหลือได้เลยครับ");
+                    resetForm(); // โหลดสต๊อกใหม่ทั้งหมดเพื่อให้สินค้าใหม่มาแสดงใน Dropdown
+                } else {
+                    hideLoading();
+                    alert("เกิดข้อผิดพลาด: " + res.msg);
+                    document.getElementById('newItemModal').style.display = 'flex'; // เปิดกลับมาให้แก้ข้อมูล
+                }
+            });
+        }
+
+        // --- Utility ---
+        function disableBtns(disable) {
+             document.getElementById('btnIn').disabled = disable;
+             document.getElementById('btnOut').disabled = disable;
+             document.getElementById('btnTransfer').disabled = disable;
+        }
+
+        function resetForm() {
+             document.getElementById('qtyInput').value = "1";
+             document.getElementById('searchInput').value = "";
+             loadStockData();
+        }
+        // 🌟 ดึงรายชื่อบริษัทจาก Sheet
+        function loadVendors() {
+            callApi('getVendors').then(res => {
+                if (res && res.status === 'success') {
+                    let dl = document.getElementById('vendorListOptions');
+                    dl.innerHTML = '';
+                    res.data.forEach(vendor => {
+                        dl.innerHTML += `<option value="${vendor}">`;
+                    });
+                }
+            }).catch(e => console.error("โหลดข้อมูลคู่ค้าไม่สำเร็จ"));
+        }
+    </script>
+</body>
+</html>
