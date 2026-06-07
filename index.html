@@ -128,7 +128,7 @@
                 </div>
                 
                 <div class="action-btns" style="margin-top: 10px;">
-                     <button class="btn btn-transfer" id="btnTransfer" onclick="openTransferModal()">🔄 โอนเป็นของใช้</button>
+                     <button class="btn btn-transfer" id="btnTransfer" onclick="openTransferModal()">🔄 โอนย้ายสินค้า</button>
                 </div>
 
                 <button class="btn btn-add-new" onclick="openNewItemModal()">➕ สร้างรายการสินค้าใหม่</button>
@@ -163,13 +163,14 @@
             </div>
 
             <label>บริษัทที่สั่ง (Supplier):</label>
-<input type="text" id="niSupplier" list="vendorListOptions" placeholder="พิมพ์หรือเลือกจากรายชื่อบริษัท">
-<datalist id="vendorListOptions"></datalist>
+            <input type="text" id="niSupplier" list="vendorListOptions" placeholder="พิมพ์หรือเลือกจากรายชื่อบริษัท">
+            <datalist id="vendorListOptions"></datalist>
 
             <label>ประเภท (หมวดหมู่):</label>
             <select id="niCategory">
                 <option value="เบิกใช้">เบิกใช้ (ของใช้ในร้าน)</option>
                 <option value="สินค้าขาย">สินค้าขาย (หน้าร้าน)</option>
+                <option value="ออนไลน์">ออนไลน์ (สต๊อกส่งขาย)</option>
             </select>
 
             <div class="two-cols">
@@ -194,10 +195,23 @@
 
     <div id="transferModal" class="overlay" style="background: rgba(0,0,0,0.5);">
          <div class="card" style="width: 80%; max-width: 350px; text-align:left;">
-             <h3 style="margin-top:0; color:var(--primary);">โอนสินค้าขาย -> เป็นของใช้</h3>
+             <h3 style="margin-top:0; color:var(--primary);">🔄 โอนย้ายสินค้า</h3>
              <p id="transferItemName" style="font-size:0.9rem; color:#555;"></p>
+             
+             <label>ประเภทการโอน:</label>
+             <select id="transferType" onchange="togglePlatformInput()">
+                 <option value="โอนเป็นของใช้">โอนเป็นของใช้ (แกะใช้ในร้าน)</option>
+                 <option value="โอนเป็นสินค้าขาย">โอนเป็นสินค้าขาย (ตั้งหน้าร้าน)</option>
+                 <option value="โอนไปสต๊อกออนไลน์">โอนไปสต๊อกออนไลน์ (ส่งขาย)</option>
+             </select>
+
+             <div id="platformZone" style="display:none;">
+                 <label>แพลตฟอร์มออนไลน์:</label>
+                 <input type="text" id="transferPlatform" placeholder="เช่น Shopee, Lazada, TikTok">
+             </div>
+
              <label>ระบุเหตุผล/หมายเหตุ:</label>
-             <input type="text" id="transferNote" placeholder="เช่น แกะใช้หน้าร้าน">
+             <input type="text" id="transferNote" placeholder="ระบุเหตุผล หรือ รหัสอ้างอิง">
              
              <div class="action-btns">
                  <button class="btn" style="background:#94A3B8;" onclick="closeTransferModal()">ยกเลิก</button>
@@ -213,7 +227,7 @@
 
     <script>
         // 🔴 นำ URL ของ Web App จาก Google Apps Script มาใส่ในนี้ 🔴
-        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwEatHhgr6ko7WDX1hLp7-U5NwZpU8n3onKQ1hGEBD-xvdfQZb5ofwvsw6H0vHZTRFD/exec";
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx4KtUDfXy3LjC22rIXc191K1EGS7UwNLlYsrPoveacne9XAF6Ycm33cPTTEs--YVU/exec";
 
         let enteredPin = "";
         let loggedInUser = "";
@@ -221,29 +235,71 @@
         let html5QrCode = null;
         let camerasList = [];
         let currentCamIdx = 0;
-        let currentScanTarget = 'searchInput'; // ตัวแปรบอกว่ากล้องกำลังสแกนให้ช่องไหน
+        let currentScanTarget = 'searchInput'; 
+        let syncInterval = null; 
 
-        // 🟢 API Fetch
+        // 🌟 1. ระบบจำ Session 5 นาที
+        window.onload = function() {
+            checkSession();
+        };
+
+        function checkSession() {
+            let savedUser = localStorage.getItem('mira_mobile_user');
+            let savedTime = localStorage.getItem('mira_mobile_time');
+            
+            if (savedUser && savedTime) {
+                let now = new Date().getTime();
+                if (now - parseInt(savedTime) < 5 * 60 * 1000) {
+                    loggedInUser = savedUser;
+                    document.getElementById('userBadge').innerText = "👤 " + loggedInUser.split(' ')[0];
+                    document.getElementById('userBadge').style.display = 'block';
+                    document.getElementById('login-screen').style.display = 'none';
+                    document.getElementById('app-screen').style.display = 'block';
+                    
+                    extendSession(); 
+                    loadStockData();
+                    loadVendors();
+                    startRealtimeSync(); 
+                    return;
+                } else {
+                    logout(); 
+                }
+            }
+        }
+
+        function extendSession() {
+            if(loggedInUser) {
+                localStorage.setItem('mira_mobile_user', loggedInUser);
+                localStorage.setItem('mira_mobile_time', new Date().getTime().toString());
+            }
+        }
+
+        // 🌟 2. ดึงข้อมูลอัปเดตแบบเรียลไทม์ทุก 15 วินาที
+        function startRealtimeSync() {
+            if(syncInterval) clearInterval(syncInterval);
+            syncInterval = setInterval(() => {
+                extendSession(); 
+                callApi('getStock').then(res => {
+                    if (res && res.status === 'success') {
+                        stockItems = res.data.filter(item => !item.isService);
+                        handleSearchInput(true); 
+                    }
+                }).catch(e => {}); 
+            }, 15000); 
+        }
+
         function callApi(action, payload = {}) {
             return fetch(SCRIPT_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
                 body: JSON.stringify({ action: action, payload: payload }),
                 redirect: 'follow'
-            })
-            .then(res => {
+            }).then(res => {
                 if (!res.ok) throw new Error("Network response not ok");
                 return res.json();
-            })
-            .catch(err => {
-                console.error("API Error:", err);
-                hideLoading();
-                alert("การเชื่อมต่อล้มเหลว กรุณาลองใหม่อีกครั้ง");
-                throw err;
             });
         }
 
-        // --- ระบบ Login ---
         function pressPin(num) {
             if(enteredPin.length < 4) {
                 enteredPin += num;
@@ -268,7 +324,7 @@
             document.getElementById('loadingOverlay').style.display = 'none';
         }
 
-      function verifyPin() {
+        function verifyPin() {
             showLoading("กำลังตรวจสอบรหัส...");
             callApi('verifyPin', { pin: enteredPin }).then(res => {
                 hideLoading();
@@ -279,18 +335,28 @@
                     document.getElementById('login-screen').style.display = 'none';
                     document.getElementById('app-screen').style.display = 'block';
                     
+                    extendSession(); 
+                    startRealtimeSync(); 
                     loadStockData(); 
-                    loadVendors(); // 🌟 เพิ่มบรรทัดนี้ เพื่อให้ดึงรายชื่อบริษัทมาเตรียมไว้ทันที
+                    loadVendors(); 
                 } else {
                     alert(res.msg || "รหัสผ่านไม่ถูกต้อง");
                     clearPin();
                 }
+            }).catch(e => {
+                hideLoading();
+                alert("การเชื่อมต่อล้มเหลว กรุณาลองใหม่อีกครั้ง");
+                clearPin();
             });
         }
 
         function logout() {
             loggedInUser = "";
             clearPin();
+            localStorage.removeItem('mira_mobile_user');
+            localStorage.removeItem('mira_mobile_time');
+            if(syncInterval) clearInterval(syncInterval);
+
             document.getElementById('userBadge').style.display = 'none';
             document.getElementById('app-screen').style.display = 'none';
             document.getElementById('login-screen').style.display = 'block';
@@ -299,7 +365,6 @@
             closeScanner();
         }
 
-        // --- ระบบดึงสต๊อก ---
         function loadStockData() {
             showLoading("กำลังดึงข้อมูลคลังสินค้า...");
             callApi('getStock').then(res => {
@@ -310,40 +375,45 @@
                 } else {
                     alert("ไม่สามารถอ่านข้อมูลสต๊อกได้");
                 }
-            });
+            }).catch(e => { hideLoading(); });
         }
 
         function renderDropdown(items) {
             let select = document.getElementById('itemSelect');
+            let currentSelection = select.value; 
+            
             select.innerHTML = '<option value="">-- เลือกรายการสินค้า --</option>';
             items.forEach(i => {
                 select.innerHTML += `<option value="${i.id}">${i.name} (คงเหลือ: ${i.qty})</option>`;
             });
+            
+            if(currentSelection) select.value = currentSelection;
         }
 
-        function handleSearchInput() {
+        function handleSearchInput(isSilent = false) {
             let term = document.getElementById('searchInput').value.toLowerCase().trim();
             let filtered = stockItems.filter(i => 
                 i.name.toLowerCase().includes(term) || i.id.toLowerCase().includes(term)
             );
             renderDropdown(filtered);
 
-            let select = document.getElementById('itemSelect');
-            if (filtered.length === 1) {
-                select.value = filtered[0].id;
-            } else {
-               let exactMatch = stockItems.find(i => i.id.toLowerCase() === term);
-               if(exactMatch) select.value = exactMatch.id;
+            if (!isSilent) {
+                let select = document.getElementById('itemSelect');
+                if (filtered.length === 1) {
+                    select.value = filtered[0].id;
+                } else {
+                   let exactMatch = stockItems.find(i => i.id.toLowerCase() === term);
+                   if(exactMatch) select.value = exactMatch.id;
+                }
             }
         }
 
-        // --- ระบบกล้อง (รองรับ 2 ช่องทาง: ค้นหา และ สร้างสินค้าใหม่) ---
         function toggleScanner(targetInputId) {
-            currentScanTarget = targetInputId; // จำไว้ว่ากล้องนี้เปิดมาเพื่อใส่รหัสให้ช่องไหน
+            extendSession();
+            currentScanTarget = targetInputId; 
             let readerDiv = document.getElementById('reader');
             let switchBtn = document.getElementById('switchCamBtn');
             
-            // ปิด Modal แปปนึงถ้าเป้าหมายคือหน้าสร้างสินค้าใหม่ เพื่อให้เห็นกล้องชัดๆ
             if(targetInputId === 'niBarcode') {
                 document.getElementById('newItemModal').style.display = 'none';
             }
@@ -387,6 +457,7 @@
         }
 
         function switchCamera() {
+            extendSession();
             if (camerasList.length > 1) {
                 currentCamIdx = (currentCamIdx + 1) % camerasList.length;
                 html5QrCode.stop().then(() => {
@@ -400,13 +471,13 @@
             document.getElementById('reader').style.display = 'none';
             if (html5QrCode) html5QrCode.stop().catch(e => {});
             
-            // ถ้าเป้าหมายคือหน้าต่างสร้างของใหม่ ให้เปิด Modal กลับมา
             if(currentScanTarget === 'niBarcode') {
                 document.getElementById('newItemModal').style.display = 'flex';
             }
         }
 
         function handleImageScan(event) {
+            extendSession();
             if (event.target.files.length == 0) {
                 if(currentScanTarget === 'niBarcode') document.getElementById('newItemModal').style.display = 'flex';
                 return;
@@ -429,26 +500,24 @@
         }
 
         function onScanSuccess(decodedText, decodedResult) {
-            closeScanner(); // จะดึง Modal กลับมาให้อัตโนมัติด้วย
+            extendSession();
+            closeScanner(); 
             
-            // เอาข้อความไปใส่ในช่องเป้าหมาย
             document.getElementById(currentScanTarget).value = decodedText;
             
-            // ถ้าช่องเป้าหมายคือการค้นหา ให้เรียกฟังก์ชันค้นหา
             if(currentScanTarget === 'searchInput') {
                 handleSearchInput(); 
                 if(document.getElementById('itemSelect').value === "") {
                      alert("สแกนได้รหัส: " + decodedText + "\nแต่ไม่พบในฐานข้อมูลสินค้า");
                 }
             }
-
             try { new Audio('https://www.soundjay.com/buttons/beep-07a.wav').play(); } catch(e){}
         }
 
         function onScanFailure(error) { }
 
-        // --- ระบบ Submit (รับเข้า/เบิก) ---
         function submitStock(actionType) {
+            extendSession();
             let barcode = document.getElementById('itemSelect').value;
             let qty = parseFloat(document.getElementById('qtyInput').value);
             
@@ -474,11 +543,17 @@
                     hideLoading();
                     alert("เกิดข้อผิดพลาด: " + res.msg);
                 }
-            });
+            }).catch(e => { hideLoading(); disableBtns(false); });
         }
 
-        // --- ระบบ Submit (โอน) ---
+        // 🌟 3. ระบบโอนย้ายสินค้าแบบใหม่ 
+        function togglePlatformInput() {
+            let type = document.getElementById('transferType').value;
+            document.getElementById('platformZone').style.display = (type === 'โอนไปสต๊อกออนไลน์') ? 'block' : 'none';
+        }
+
         function openTransferModal() {
+             extendSession();
              let barcode = document.getElementById('itemSelect').value;
              let qty = parseFloat(document.getElementById('qtyInput').value);
              if(!barcode) return alert("กรุณาเลือกสินค้าที่ต้องการโอน");
@@ -487,37 +562,54 @@
              let itemName = document.getElementById('itemSelect').options[document.getElementById('itemSelect').selectedIndex].text;
              document.getElementById('transferItemName').innerText = `${itemName} (จำนวน ${qty} ชิ้น)`;
              document.getElementById('transferNote').value = "";
+             document.getElementById('transferPlatform').value = "";
+             document.getElementById('transferType').value = "โอนเป็นของใช้";
+             togglePlatformInput();
              document.getElementById('transferModal').style.display = 'flex';
         }
 
         function closeTransferModal() { document.getElementById('transferModal').style.display = 'none'; }
 
-        function confirmTransfer() {
+       function confirmTransfer() {
+            extendSession();
             let barcode = document.getElementById('itemSelect').value;
             let qty = parseFloat(document.getElementById('qtyInput').value);
-            let note = document.getElementById('transferNote').value.trim() || "โอนเป็นของใช้ในร้าน";
+            let type = document.getElementById('transferType').value;
+            let note = document.getElementById('transferNote').value.trim();
+            let platform = document.getElementById('transferPlatform').value.trim();
+
+            if (type === 'โอนไปสต๊อกออนไลน์' && !platform) {
+                return alert("กรุณาระบุแพลตฟอร์มออนไลน์ เช่น Shopee, Lazada");
+            }
 
             closeTransferModal();
             disableBtns(true);
-            showLoading("กำลังโอนสินค้า...");
+            showLoading("กำลังบันทึกโอนสินค้า...");
 
-            let payload = { barcode: barcode, qty: qty, staff: loggedInUser, note: note };
+            // 🌟 ส่งข้อมูลแยกฟิลด์กันชัดเจน
+            let payload = { 
+                barcode: barcode, 
+                qty: qty, 
+                staff: loggedInUser, 
+                transferType: type, 
+                platform: platform, // แพลตฟอร์มแยก
+                note: note          // หมายเหตุแยก
+            };
 
-            callApi('transferToInternalUse', payload).then(res => {
+            callApi('transferStock', payload).then(res => {
                 disableBtns(false);
                 if(res.status === "success") {
-                    alert("โอนสินค้าเรียบร้อยแล้ว");
+                    alert(`ทำการ ${type} เรียบร้อยแล้ว`);
                     resetForm();
                 } else {
                     hideLoading();
                     alert("เกิดข้อผิดพลาด: " + res.msg);
                 }
-            });
+            }).catch(e => { hideLoading(); disableBtns(false); });
         }
 
-        // --- 🌟 ระบบสร้างสินค้าใหม่ ---
         function openNewItemModal() {
-            // ล้างค่าฟอร์มก่อนเปิด
+            extendSession();
             document.getElementById('niBarcode').value = "";
             document.getElementById('niName').value = "";
             document.getElementById('niBrand').value = "";
@@ -535,6 +627,7 @@
         }
 
         function submitNewItem() {
+            extendSession();
             let payload = {
                 barcode: document.getElementById('niBarcode').value.trim(),
                 name: document.getElementById('niName').value.trim(),
@@ -557,16 +650,15 @@
             callApi('addNewItem', payload).then(res => {
                 if(res.status === "success") {
                     alert("เพิ่มสินค้าใหม่เข้าระบบสำเร็จ!\nสามารถกด 'รับเข้า' เพื่อเพิ่มจำนวนคงเหลือได้เลยครับ");
-                    resetForm(); // โหลดสต๊อกใหม่ทั้งหมดเพื่อให้สินค้าใหม่มาแสดงใน Dropdown
+                    resetForm(); 
                 } else {
                     hideLoading();
                     alert("เกิดข้อผิดพลาด: " + res.msg);
-                    document.getElementById('newItemModal').style.display = 'flex'; // เปิดกลับมาให้แก้ข้อมูล
+                    document.getElementById('newItemModal').style.display = 'flex'; 
                 }
-            });
+            }).catch(e => { hideLoading(); });
         }
 
-        // --- Utility ---
         function disableBtns(disable) {
              document.getElementById('btnIn').disabled = disable;
              document.getElementById('btnOut').disabled = disable;
@@ -578,7 +670,6 @@
              document.getElementById('searchInput').value = "";
              loadStockData();
         }
-        // 🌟 ดึงรายชื่อบริษัทจาก Sheet
         function loadVendors() {
             callApi('getVendors').then(res => {
                 if (res && res.status === 'success') {
@@ -588,7 +679,7 @@
                         dl.innerHTML += `<option value="${vendor}">`;
                     });
                 }
-            }).catch(e => console.error("โหลดข้อมูลคู่ค้าไม่สำเร็จ"));
+            }).catch(e => {});
         }
     </script>
 </body>
